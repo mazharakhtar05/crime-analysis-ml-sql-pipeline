@@ -13,7 +13,11 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.metrics import (
+    accuracy_score, classification_report, confusion_matrix,
+    roc_auc_score, precision_score, recall_score, f1_score,
+    balanced_accuracy_score
+)
 from sklearn.preprocessing import LabelEncoder
 import xgboost as xgb
 from imblearn.over_sampling import SMOTE
@@ -101,18 +105,55 @@ def train_baseline_models(X_train: pd.DataFrame, y_train: pd.Series,
 
 
 def evaluate_model(y_test: pd.Series, y_pred: pd.Series, 
-                   model_name: str = "Model") -> None:
+                   y_prob: Optional[np.ndarray] = None,
+                   model_name: str = "Model") -> Dict[str, float]:
     """
-    Evaluate model performance and print metrics.
+    Evaluate model performance, print classification metrics, and return metric dictionary.
     
     Args:
         y_test: True labels
         y_pred: Predicted labels
+        y_prob: Predicted positive-class probabilities (optional, for ROC-AUC)
         model_name: Name of the model for display
+        
+    Returns:
+        Dictionary of calculated evaluation metrics
     """
+    acc = float(accuracy_score(y_test, y_pred))
+    bal_acc = float(balanced_accuracy_score(y_test, y_pred))
+    prec = float(precision_score(y_test, y_pred, zero_division=0))
+    rec = float(recall_score(y_test, y_pred, zero_division=0))
+    f1 = float(f1_score(y_test, y_pred, zero_division=0))
+    cm = confusion_matrix(y_test, y_pred).tolist()
+    
+    metrics = {
+        'model_name': model_name,
+        'accuracy': round(acc, 4),
+        'balanced_accuracy': round(bal_acc, 4),
+        'precision': round(prec, 4),
+        'recall': round(rec, 4),
+        'f1_score': round(f1, 4),
+        'confusion_matrix': cm
+    }
+    
+    if y_prob is not None:
+        try:
+            auc = float(roc_auc_score(y_test, y_prob))
+            metrics['roc_auc'] = round(auc, 4)
+        except Exception:
+            metrics['roc_auc'] = None
+
     print(f"\n--- {model_name} Performance ---")
-    print(f"Accuracy: {accuracy_score(y_test, y_pred):.4f}")
-    print(classification_report(y_test, y_pred))
+    print(f"Accuracy: {metrics['accuracy']:.4f} | Balanced Accuracy: {metrics['balanced_accuracy']:.4f}")
+    print(f"Precision: {metrics['precision']:.4f} | Recall: {metrics['recall']:.4f} | F1: {metrics['f1_score']:.4f}")
+    if metrics.get('roc_auc') is not None:
+        print(f"ROC-AUC: {metrics['roc_auc']:.4f}")
+    print("\nConfusion Matrix [TN, FP / FN, TP]:")
+    print(confusion_matrix(y_test, y_pred))
+    print("\nDetailed Classification Report:")
+    print(classification_report(y_test, y_pred, zero_division=0))
+    
+    return metrics
 
 
 def optimize_models(X_train: pd.DataFrame, y_train: pd.Series,
@@ -182,15 +223,23 @@ def optimize_models(X_train: pd.DataFrame, y_train: pd.Series,
 
 
 def plot_feature_importance(model, X: pd.DataFrame, 
-                           title: str = 'Feature Importances') -> None:
+                           title: str = 'Feature Importances',
+                           save_path: Optional[str] = None,
+                           show_plot: bool = False) -> None:
     """
-    Plot feature importance for tree-based models.
+    Plot feature importance for tree-based models and optionally save to disk.
     
     Args:
         model: Trained model with feature_importances_ attribute
         X: Feature DataFrame
         title: Plot title
+        save_path: Optional file path to save figure
+        show_plot: Whether to invoke plt.show() (default: False to avoid blocking)
     """
+    if not hasattr(model, 'feature_importances_'):
+        print("Model does not expose feature_importances_. Skipping plot.")
+        return
+        
     importances = model.feature_importances_
     indices = np.argsort(importances)
     
@@ -200,7 +249,16 @@ def plot_feature_importance(model, X: pd.DataFrame,
     plt.yticks(range(len(indices)), [X.columns[i] for i in indices])
     plt.xlabel('Relative Importance')
     plt.tight_layout()
-    plt.show()
+    
+    if save_path:
+        os.makedirs(os.path.dirname(save_path) or '.', exist_ok=True)
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"Feature importance plot saved to: {save_path}")
+    
+    if show_plot:
+        plt.show()
+    else:
+        plt.close()
 
 
 def save_model(model, filepath: str) -> None:
@@ -357,10 +415,15 @@ def full_training_pipeline(df_final: pd.DataFrame,
     evaluate_model(y_test, optimized_results['rf_preds'], "Optimized Random Forest")
     evaluate_model(y_test, optimized_results['xgb_preds'], "Optimized XGBoost")
     
-    # Plot feature importance for XGBoost
-    X = df_final.drop('Arrest', axis=1)
-    plot_feature_importance(optimized_results['best_xgb'], X, 
-                           'Feature Importances (XGBoost Model)')
+    # Plot feature importance for XGBoost and save to figures directory
+    X = df_final.drop('Arrest', axis=1, errors='ignore')
+    plot_feature_importance(
+        optimized_results['best_xgb'], 
+        X, 
+        'Feature Importances (XGBoost Model)',
+        save_path='reports/figures/feature_importance.png',
+        show_plot=False
+    )
     
     # Save best model (XGBoost)
     save_model(optimized_results['best_xgb'], model_save_path)

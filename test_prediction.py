@@ -22,16 +22,26 @@ def main():
     print("Chicago Crime Analysis - Test Predictions")
     print("=" * 60)
     
-    # Load data and encoders
-    print("\nLoading data and model...")
-    df_cleaned, df_final, encoders = preprocess_pipeline(nrows=50000)
+    model_path = 'models/xgboost_model.pkl'
+    encoder_path = 'models/encoders.pkl'
     
-    # Load trained model
-    if not os.path.exists('models/xgboost_model.pkl'):
-        print("Error: Model not found. Please run train_model.py first.")
+    # Check if model exists
+    if not os.path.exists(model_path):
+        print(f"Error: Model file '{model_path}' not found. Please run train_model.py first.")
         sys.exit(1)
+        
+    print(f"Loading trained model from '{model_path}'...")
+    model = load_model(model_path)
     
-    model = load_model('models/xgboost_model.pkl')
+    # Load encoders if available; otherwise perform minimal preprocessing
+    if os.path.exists(encoder_path):
+        print(f"Loading pre-computed encoders from '{encoder_path}'...")
+        with open(encoder_path, 'rb') as f:
+            encoders = pickle.load(f)
+        df_cleaned = None
+    else:
+        print(f"Encoders not found at '{encoder_path}'. Extracting encoders via preprocessing...")
+        df_cleaned, _, encoders = preprocess_pipeline(nrows=10000)
     
     # Test scenarios
     print("\n" + "=" * 60)
