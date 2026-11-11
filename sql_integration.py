@@ -50,17 +50,23 @@ def main():
     print("=" * 60)
     
     if results['success']:
-        print("\n[SUCCESS] Data migrated to MySQL successfully")
+        print("\n[SUCCESS] Data migrated to database successfully")
         print("[SUCCESS] Analytics queries executed")
         print("[SUCCESS] Predictions stored in database")
         
         # Display analytics summary
         analytics = results['analytics']
         print("\n--- Analytics Summary ---")
-        print(f"\nTop District by Volume:")
-        if not analytics['top_districts'].empty:
+        if 'top_districts' in analytics and not analytics['top_districts'].empty:
+            print(f"\nTop District by Volume:")
             print(f"  District {analytics['top_districts'].iloc[0]['District']}: "
                   f"{analytics['top_districts'].iloc[0]['Incident_Count']} incidents")
+        
+        if 'district_volume_ranking' in analytics and not analytics['district_volume_ranking'].empty:
+            print(f"\nRanked Districts (Window Analytics):")
+            top_ranked = analytics['district_volume_ranking'].iloc[0]
+            print(f"  Rank 1 District: {top_ranked['District']} "
+                  f"({top_ranked['Incident_Count']} incidents, Arrest Rate: {top_ranked['Arrest_Rate']}%)")
         
         print(f"\nPredictions saved: {results['predictions_saved']}")
     else:

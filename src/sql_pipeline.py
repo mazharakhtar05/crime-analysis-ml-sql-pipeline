@@ -142,87 +142,108 @@ def run_sql_query(query: str, engine=None) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def run_analytics(engine=None) -> Dict[str, pd.DataFrame]:
+def get_analytics_queries() -> Dict[str, str]:
+    """
+    Returns a dictionary of standardized analytics SQL queries.
+    All queries are compatible with MySQL 8+ and SQLite 3.25+.
+    
+    Returns:
+        Dictionary mapping query names to SQL statements
+    """
+    return {
+        'top_districts': """
+            SELECT District, COUNT(*) as Incident_Count
+            FROM chicago_crimes_optimized
+            GROUP BY District
+            ORDER BY Incident_Count DESC
+            LIMIT 5;
+        """,
+        'district_volume_ranking': """
+            SELECT
+                District,
+                COUNT(*) as Incident_Count,
+                DENSE_RANK() OVER (ORDER BY COUNT(*) DESC) as Volume_Rank,
+                ROUND(AVG(Arrest) * 100, 2) as Arrest_Rate
+            FROM chicago_crimes_optimized
+            GROUP BY District
+            ORDER BY Volume_Rank ASC
+            LIMIT 10;
+        """,
+        'arrest_rates': """
+            SELECT `Primary Type`,
+                   COUNT(*) as Incident_Count,
+                   ROUND(AVG(Arrest) * 100, 2) as Arrest_Percentage
+            FROM chicago_crimes_optimized
+            GROUP BY `Primary Type`
+            HAVING COUNT(*) > 100
+            ORDER BY Arrest_Percentage DESC
+            LIMIT 10;
+        """,
+        'peak_hours': """
+            SELECT
+                Hour,
+                COUNT(*) as Crime_Count,
+                DENSE_RANK() OVER (ORDER BY COUNT(*) DESC) as Peak_Rank,
+                CASE
+                    WHEN Hour BETWEEN 0 AND 5 THEN 'Late Night'
+                    WHEN Hour BETWEEN 6 AND 11 THEN 'Morning'
+                    WHEN Hour BETWEEN 12 AND 17 THEN 'Afternoon'
+                    ELSE 'Evening'
+                END as Time_Period
+            FROM chicago_crimes_optimized
+            GROUP BY Hour
+            ORDER BY Crime_Count DESC
+            LIMIT 5;
+        """,
+        'gap_areas': """
+            SELECT
+                District,
+                COUNT(*) as Incident_Count,
+                ROUND(AVG(Arrest) * 100, 2) as Arrest_Rate,
+                ROUND(AVG(AVG(Arrest) * 100) OVER (), 2) as Citywide_Avg_Arrest_Rate
+            FROM chicago_crimes_optimized
+            GROUP BY District
+            HAVING COUNT(*) > 1000
+            ORDER BY Arrest_Rate ASC
+            LIMIT 5;
+        """
+    }
+
+
+def run_analytics(engine=None, queries: Optional[Dict[str, str]] = None) -> Dict[str, pd.DataFrame]:
     """
     Run comprehensive SQL analytics queries.
     
     Args:
-        engine: SQLAlchemy engine
+        engine: SQLAlchemy engine (creates default if None)
+        queries: Optional custom dictionary of queries
         
     Returns:
-        Dictionary with analytics results
+        Dictionary with analytics results DataFrames
     """
     if engine is None:
         engine = create_db_engine()
     
+    query_dict = queries or get_analytics_queries()
     results = {}
     
-    # Query 1: Top 5 High-Volume Districts
-    query_districts = """
-    SELECT District, COUNT(*) as Incident_Count
-    FROM chicago_crimes_optimized
-    GROUP BY District
-    ORDER BY Incident_Count DESC
-    LIMIT 5;
-    """
+    titles = {
+        'top_districts': "Top 5 High-Volume Districts",
+        'district_volume_ranking': "District Crime Volume & Window Rankings",
+        'arrest_rates': "Top 10 Arrest Rates by Crime Type",
+        'peak_hours': "Peak Crime Hours (Ranked)",
+        'gap_areas': "Gap Areas (High Volume, Low Arrest Rates vs Citywide Avg)"
+    }
     
-    # Query 2: Top 10 Arrest Rates by Crime Type
-    query_arrest_rates = """
-    SELECT `Primary Type`,
-           ROUND(AVG(Arrest) * 100, 2) as Arrest_Percentage
-    FROM chicago_crimes_optimized
-    GROUP BY `Primary Type`
-    HAVING COUNT(*) > 100
-    ORDER BY Arrest_Percentage DESC
-    LIMIT 10;
-    """
-    
-    # Query 3: Peak Crime Hours
-    query_peaks = """
-    SELECT
-        Hour,
-        COUNT(*) as Crime_Count,
-        CASE
-            WHEN Hour BETWEEN 0 AND 5 THEN 'Late Night'
-            WHEN Hour BETWEEN 6 AND 11 THEN 'Morning'
-            WHEN Hour BETWEEN 12 AND 17 THEN 'Afternoon'
-            ELSE 'Evening'
-        END as Time_Period
-    FROM chicago_crimes_optimized
-    GROUP BY Hour
-    ORDER BY Crime_Count DESC
-    LIMIT 5;
-    """
-    
-    # Query 4: Gap Areas (High Crime, Low Arrest)
-    query_gaps = """
-    SELECT
-        District,
-        COUNT(*) as Incident_Count,
-        ROUND(AVG(Arrest) * 100, 2) as Arrest_Rate
-    FROM chicago_crimes_optimized
-    GROUP BY District
-    HAVING Incident_Count > 1000
-    ORDER BY Arrest_Rate ASC
-    LIMIT 5;
-    """
-    
-    # Execute queries
-    print("\n--- Top 5 High-Volume Districts ---")
-    results['top_districts'] = run_sql_query(query_districts, engine)
-    print(results['top_districts'])
-    
-    print("\n--- Top 10 Arrest Rates by Crime Type ---")
-    results['arrest_rates'] = run_sql_query(query_arrest_rates, engine)
-    print(results['arrest_rates'])
-    
-    print("\n--- Peak Crime Hours ---")
-    results['peak_hours'] = run_sql_query(query_peaks, engine)
-    print(results['peak_hours'])
-    
-    print("\n--- Gap Areas (High Volume, Low Arrest Rates) ---")
-    results['gap_areas'] = run_sql_query(query_gaps, engine)
-    print(results['gap_areas'])
+    for key, query in query_dict.items():
+        title = titles.get(key, key.replace('_', ' ').title())
+        print(f"\n--- {title} ---")
+        df_result = run_sql_query(query, engine)
+        results[key] = df_result
+        if not df_result.empty:
+            print(df_result)
+        else:
+            print("No records returned.")
     
     return results
 
