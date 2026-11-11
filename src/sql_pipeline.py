@@ -14,32 +14,36 @@ from typing import Optional, Dict
 from dotenv import load_dotenv
 
 
-def get_db_credentials() -> Dict[str, str]:
+def get_db_credentials() -> Dict[str, Optional[str]]:
     """
     Get database credentials from environment variables.
     
     Returns:
-        Dictionary with database credentials
+        Dictionary with database credentials or None values if unset.
     """
     # Load .env file if it exists
     load_dotenv()
     
     credentials = {
-        'DB_HOST': os.getenv('DB_HOST', 'sql12.freesqldatabase.com'),
-        'DB_USER': os.getenv('DB_USER', 'sql12823726'),
-        'DB_PASS': os.getenv('DB_PASS', 'PDU5W6uflR'),
-        'DB_NAME': os.getenv('DB_NAME', 'sql12823726')
+        'DB_HOST': os.getenv('DB_HOST'),
+        'DB_USER': os.getenv('DB_USER'),
+        'DB_PASS': os.getenv('DB_PASS'),
+        'DB_NAME': os.getenv('DB_NAME'),
+        'DB_PORT': os.getenv('DB_PORT', '3306'),
+        'DATABASE_URL': os.getenv('DATABASE_URL')
     }
     
     return credentials
 
 
-def create_db_engine(credentials: Optional[Dict[str, str]] = None):
+def create_db_engine(credentials: Optional[Dict[str, Optional[str]]] = None, 
+                     sqlite_path: str = 'data/crime_analysis.db'):
     """
-    Create SQLAlchemy engine for database connection.
+    Create SQLAlchemy engine for database connection with automatic SQLite fallback.
     
     Args:
         credentials: Database credentials dict (uses env vars if None)
+        sqlite_path: File path for local SQLite fallback database
         
     Returns:
         SQLAlchemy engine object
@@ -47,14 +51,32 @@ def create_db_engine(credentials: Optional[Dict[str, str]] = None):
     if credentials is None:
         credentials = get_db_credentials()
     
-    connection_url = (
-        f"mysql+pymysql://{credentials['DB_USER']}:{credentials['DB_PASS']}"
-        f"@{credentials['DB_HOST']}/{credentials['DB_NAME']}"
-    )
+    # 1. Check if direct DATABASE_URL is set
+    db_url = credentials.get('DATABASE_URL')
+    if db_url:
+        print("Connecting to database using configured DATABASE_URL.")
+        return create_engine(db_url)
     
-    engine = create_engine(connection_url)
-    print("Database engine initialized successfully.")
+    host = credentials.get('DB_HOST')
+    user = credentials.get('DB_USER')
+    password = credentials.get('DB_PASS')
+    name = credentials.get('DB_NAME')
+    port = credentials.get('DB_PORT', '3306')
     
+    # 2. If MySQL credentials are provided, connect to MySQL
+    if host and user and password and name:
+        connection_url = f"mysql+pymysql://{user}:{password}@{host}:{port}/{name}"
+        print(f"Connecting to MySQL database on {host} (database: {name})...")
+        engine = create_engine(connection_url)
+        print("MySQL database engine initialized successfully.")
+        return engine
+    
+    # 3. Fallback to local SQLite database
+    os.makedirs(os.path.dirname(sqlite_path) or '.', exist_ok=True)
+    sqlite_url = f"sqlite:///{sqlite_path}"
+    print(f"No MySQL credentials configured. Using local SQLite database at: {sqlite_url}")
+    engine = create_engine(sqlite_url)
+    print("SQLite database engine initialized successfully.")
     return engine
 
 
