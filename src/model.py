@@ -238,8 +238,8 @@ def load_model(filepath: str):
 
 
 def predict_arrest_likelihood(district: int, hour: int, primary_type: str,
-                             domestic: int = 0, encoders: Dict = None,
-                             model=None, df_cleaned: pd.DataFrame = None) -> Dict:
+                             domestic: int = 0, encoders: Optional[Dict] = None,
+                             model=None, df_cleaned: Optional[pd.DataFrame] = None) -> Dict:
     """
     Predict arrest likelihood for a given crime incident.
     
@@ -248,36 +248,50 @@ def predict_arrest_likelihood(district: int, hour: int, primary_type: str,
         hour: Hour of day (0-23)
         primary_type: Type of crime (e.g., 'THEFT', 'BATTERY')
         domestic: Whether crime is domestic (0 or 1)
-        encoders: Dictionary with fitted label encoders
+        encoders: Dictionary with fitted label encoders & reference metadata
         model: Trained model for prediction
-        df_cleaned: Cleaned dataframe for reference values
+        df_cleaned: Optional reference dataframe (falls back to encoders metadata if None)
         
     Returns:
         Dictionary with prediction results
     """
-    if encoders is None or model is None or df_cleaned is None:
-        raise ValueError("encoders, model, and df_cleaned must be provided")
+    if encoders is None or model is None:
+        raise ValueError("encoders and model must be provided")
     
     # Map district to area_risk score
     district_counts = encoders['district_counts']
-    risk_score = district_counts.get(district, district_counts.mean())
+    if isinstance(district_counts, dict):
+        mean_risk = sum(district_counts.values()) / max(len(district_counts), 1)
+        risk_score = district_counts.get(district, mean_risk)
+    else:
+        risk_score = district_counts.get(district, district_counts.mean())
     
     # Encode the primary type
     le_type = encoders['le_type']
-    try:
+    type_classes = set(le_type.classes_) if hasattr(le_type, 'classes_') else set()
+    if primary_type in type_classes:
         type_encoded = le_type.transform([primary_type])[0]
-    except ValueError:
-        # Default to most common type if unknown
+    elif 'THEFT' in type_classes:
         type_encoded = le_type.transform(['THEFT'])[0]
+    else:
+        type_encoded = 0
+    
+    # Determine coordinate priors from df_cleaned or encoders metadata
+    if df_cleaned is not None and 'Latitude' in df_cleaned and not df_cleaned['Latitude'].empty:
+        latitude = float(df_cleaned['Latitude'].median())
+        longitude = float(df_cleaned['Longitude'].median())
+    else:
+        latitude = float(encoders.get('median_latitude', 41.8781))
+        longitude = float(encoders.get('median_longitude', -87.6298))
     
     # Create input data with median/mode values for missing features
     input_data = pd.DataFrame([{
         'Domestic': domestic,
         'District': district,
-        'Latitude': df_cleaned['Latitude'].median(),
-        'Longitude': df_cleaned['Longitude'].median(),
+        'Latitude': latitude,
+        'Longitude': longitude,
         'Hour': hour,
-        'Month': 9,  # Default to September
+        'Month': 9,  # Default reference month
         'is_weekend': 0,
         'Primary Type Target': type_encoded,
         'Location Description Target': 0,
@@ -285,9 +299,10 @@ def predict_arrest_likelihood(district: int, hour: int, primary_type: str,
         'area_risk': risk_score
     }])
     
-    # Ensure column order matches training
-    # Note: Adjust columns based on your actual model training
-    input_data = input_data[model.feature_names_in_]
+    # Ensure column order matches training feature names if available
+    feature_names = getattr(model, 'feature_names_in_', None)
+    if feature_names is not None:
+        input_data = input_data[feature_names]
     
     # Generate prediction
     prob = model.predict_proba(input_data)[0][1]
