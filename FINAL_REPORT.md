@@ -1,6 +1,6 @@
 # Final Report: Chicago Crime Analysis Using Machine Learning and SQL Pipeline
 
-**Author**: [Your Name]  
+**Author**: Mazhar Akhtar Ansari  
 **Date**: April 2026  
 **Project Type**: End-to-End Data Science & Engineering Pipeline  
 **Technologies**: Python, Machine Learning, SQL, MySQL, Data Visualization

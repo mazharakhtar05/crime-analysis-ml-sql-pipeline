@@ -6,9 +6,12 @@
 # 1. Install dependencies
 pip install -r requirements.txt
 
-# 2. Configure database (optional - for SQL features)
+# 2. Configure database (optional)
 cp .env.example .env
-# Edit .env with your credentials
+# Edit .env with your credentials (if omitted, defaults to local SQLite automatically)
+
+# 3. Verify setup with automated test suite
+python -m unittest discover tests
 ```
 
 ## Run the Complete Pipeline
@@ -20,7 +23,7 @@ python train_model.py
 ```
 
 This will:
-- Download data from Kaggle
+- Download data from Kaggle (or use cached data if present)
 - Clean and preprocess the data
 - Train baseline and optimized models
 - Save the best XGBoost model to `models/xgboost_model.pkl`
@@ -32,8 +35,8 @@ python sql_integration.py
 ```
 
 This will:
-- Migrate cleaned data to MySQL
-- Run analytics queries
+- Migrate cleaned data to database (SQLite or MySQL)
+- Run modular analytics queries (including window functions)
 - Store model predictions in the database
 
 ### Step 3: Test Predictions

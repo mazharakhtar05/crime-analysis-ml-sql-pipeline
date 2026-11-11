@@ -102,8 +102,8 @@ Chicago faces significant law enforcement challenges with over 50,000+ recorded 
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/chicago-crime-analysis.git
-cd chicago-crime-analysis
+git clone https://github.com/mazharakhtar05/crime-analysis-ml-sql-pipeline.git
+cd crime-analysis-ml-sql-pipeline
 
 # Create virtual environment
 python -m venv venv
@@ -114,8 +114,18 @@ pip install -r requirements.txt
 
 # Configure environment variables (optional)
 cp .env.example .env
-# Edit .env with your MySQL credentials
+# Edit .env with your MySQL credentials (if omitted, pipeline uses local SQLite automatically)
 ```
+
+### 2. Run Test Suite
+
+```bash
+python -m unittest discover tests
+```
+
+**What this does:**
+- Runs the test suite covering data preprocessing, ML inference, and SQL analytical window queries
+- Verifies system components without requiring external database connections
 
 ### 2. Train the Model
 
